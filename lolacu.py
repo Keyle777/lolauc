@@ -1,5 +1,3 @@
-# 弟弟想隐身玩游戏给他做的
-
 import psutil
 import re
 import requests
@@ -12,6 +10,7 @@ import webbrowser
 import requests
 import subprocess
 import sys
+import datetime
 import threading
 import tkinter as tk
 
@@ -21,10 +20,14 @@ requests.DEFAULT_RETRIES = 1000
 
 # 设置变量区
 LCU_API = {
-    "current_summoner": "/lol-summoner/v1/current-summoner",
-    "game_session": "/lol-gameflow/v1/session",
-    "chat_me": "/lol-chat/v1/me"
+    "current_summoner": "/lol-summoner/v1/current-summoner",  # 获取当前召唤师信息的API路径
+    "game_session": "/lol-gameflow/v1/session",  # 获取游戏会话信息的API路径
+    "chat_me": "/lol-chat/v1/me",  # 获取聊天个人信息的API路径
+    "match_history": "/lol-match-history/v1/products/lol",  # 获取召唤师匹配历史的API路径
+    "summoner_names": "/lol-summoner/v2/summoners/names",  # 获取召唤师名称的API路径
+    "grid_champions": "/lol-champ-select/v1/grid-champions",  # 获取英雄选择界面的API路径
 }
+
 CMD_CHECK_LOL_PROCESS = 'wmic process where name="LeagueClientUx.exe" get processid,executablepath,name'
 
 # LCU API 相关操作封装到类中
@@ -50,16 +53,18 @@ class Lcuapi:
             except (psutil.AccessDenied, psutil.NoSuchProcess):
                 pass
         return None, None
-    
-    def _send_api_request(self, api, lol_PT, method="GET", data=None):
+        
+    def _send_api_request(self, api, lol_PT, method="GET", params=None, data=None):
         port, token = lol_PT
         url = f"https://riot:{token}@127.0.0.1:{port}{api}"
         response = None
         try:
             if method == "GET":
-                response = self.requests_session.get(url, verify=False)
+                response = self.requests_session.get(url, params=params, verify=False)
             elif method == "PUT":
                 response = self.requests_session.put(url, json=data, verify=False)
+            elif method == "POST":
+                response = self.requests_session.post(url, json=data, verify=False)
             if response:
                 response.raise_for_status()
                 return response.json()
@@ -68,6 +73,8 @@ class Lcuapi:
         except Exception as e:
             print(f"发送 {method} 请求到 {url} 时发生错误：{e}")
         return None
+
+
 
     def check_lol_process(self):
         res = subprocess.Popen(CMD_CHECK_LOL_PROCESS,
@@ -92,7 +99,15 @@ class Lcuapi:
     def set_chat_me_status(self, lol_PT, status):
         data = {"availability": status}
         return self._send_api_request(LCU_API["chat_me"], lol_PT, method="PUT", data=data)
-
+    
+    def get_grid_champions(self, lol_PT, data):
+        return self._send_api_request(LCU_API["grid_champions"]+ f"/{data['participants'][0]['championId']}", lol_PT)
+    
+    def get_match_history(self, lol_PT, name):
+        data = [name]
+        summoner = self._send_api_request(LCU_API["summoner_names"], lol_PT, method="POST", data=data)
+        summoner = summoner[0]['puuid']
+        return self._send_api_request(LCU_API["match_history"] + f"/{summoner}/matches", lol_PT)
 
 def main():
     # 创建 Lcuapi 实例
@@ -137,6 +152,22 @@ def main():
             new_status = "invisible"
             lcu.set_chat_me_status(lol_PT, new_status)
             print(f"召唤师修改后的状态：{new_status}")
+
+        # 查询某英雄战绩
+        name = '白夜天雨'  # 在这里修改名字，要登录一个同区的账号
+        match_history = lcu.get_match_history(lol_PT, name)
+        if match_history:
+            for i in match_history['games']['games']:
+                    start_time = datetime.datetime.strptime(i['gameCreationDate'][:19],
+                                                            '%Y-%m-%dT%H:%M:%S')
+                    start_time = start_time + datetime.timedelta(hours=8)
+                    start_time = start_time.strftime('%Y-%m-%d %H:%M:%S')
+                    champion_name = lcu.get_grid_champions(lol_PT,data=i)
+                    champion_name = champion_name['name']
+                    print(start_time, ('\033[31m败\033[0m', '\033[34m胜\033[0m')[i['participants'][0]['stats']['win']],
+                        '[' + champion_name + ']', str(i['participants'][0]['stats']['kills'])
+                        + '-' + str(i['participants'][0]['stats']['deaths'])
+                        + '-' + str(i['participants'][0]['stats']['assists']), i['gameMode'])
 
     else:
         print("未检测到游戏进程")
