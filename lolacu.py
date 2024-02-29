@@ -105,9 +105,14 @@ class Lcuapi:
     
     def get_match_history(self, lol_PT, name):
         data = [name]
-        summoner = self._send_api_request(LCU_API["summoner_names"], lol_PT, method="POST", data=data)
-        summoner = summoner[0]['puuid']
-        return self._send_api_request(LCU_API["match_history"] + f"/{summoner}/matches", lol_PT)
+        try:
+            summoner = self._send_api_request(LCU_API["summoner_names"], lol_PT, method="POST", data=data)
+            summoner = summoner[0]['puuid']
+            return self._send_api_request(LCU_API["match_history"] + f"/{summoner}/matches", lol_PT)
+        except Exception as e:
+            print(f"获取 {name} 的匹配历史时发生错误：{e}")
+            return None
+
 
 def main():
     # 创建 Lcuapi 实例
@@ -154,7 +159,7 @@ def main():
             print(f"召唤师修改后的状态：{new_status}")
 
         # 查询某英雄战绩
-        name = '白夜天雨'  # 在这里修改名字，要登录一个同区的账号
+        name = '残花怎能败柳dc'  # 在这里修改名字，要登录一个同区的账号
         match_history = lcu.get_match_history(lol_PT, name)
         if match_history:
             for i in match_history['games']['games']:
